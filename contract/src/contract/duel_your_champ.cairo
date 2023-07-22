@@ -27,10 +27,8 @@ trait ERC721ABI {
 
 #[derive(Copy, Drop, Serde)] 
 struct Game {
-    name: felt252,
     nft_collection_address: ContractAddress,
     winner: ContractAddress,
-    turn_duration: u64,
     num_players: u16,
     start_time: u64,
     is_active: bool,
@@ -52,55 +50,43 @@ struct Player {
 impl GameStorageAccess of StorageAccess::<Game> {
     fn read(address_domain: u32, base: StorageBaseAddress) -> SyscallResult::<Game> {
 
-        let name = StorageAccess::read(address_domain, base)?;
+        let nft_collection_address = StorageAccess::read(address_domain, base)?;
 
-        let nft_collection_address_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 1_u8).into());
-        let nft_collection_address = StorageAccess::read(address_domain, nft_collection_address_base)?;
-
-        let winner_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 2_u8).into());
+        let winner_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 1_u8).into());
         let winner = StorageAccess::read(address_domain, winner_base)?;
 
-        let turn_duration_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 3_u8).into());
-        let turn_duration = StorageAccess::read(address_domain, turn_duration_base)?;
-
-        let num_players_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 4_u8).into());
+        let num_players_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 2_u8).into());
         let num_players = StorageAccess::read(address_domain, num_players_base)?;
 
-        let start_time_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 5_u8).into());
+        let start_time_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 3_u8).into());
         let start_time = StorageAccess::read(address_domain, start_time_base)?;
 
-        let is_active_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 6_u8).into());
+        let is_active_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 4_u8).into());
         let is_active = StorageAccess::read(address_domain, is_active_base)?;
 
-        let current_tour_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 7_u8).into());
+        let current_tour_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 5_u8).into());
         let current_tour = StorageAccess::read(address_domain, current_tour_base)?;
 
-        Result::Ok(Game { name , nft_collection_address, winner, turn_duration, num_players, start_time, is_active, current_tour })
+        Result::Ok(Game {  nft_collection_address, winner, num_players, start_time, is_active, current_tour })
 
     }
 
     fn write(address_domain: u32, base: StorageBaseAddress, value: Game) -> SyscallResult::<()> {
-        StorageAccess::write(address_domain, base, value.name)?;
+        StorageAccess::write(address_domain, base, value.nft_collection_address)?;
 
-        let nft_collection_address_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 1_u8).into());
-        StorageAccess::write(address_domain, nft_collection_address_base, value.nft_collection_address)?;
-
-        let winner_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 2_u8).into());
+        let winner_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 1_u8).into());
         StorageAccess::write(address_domain, winner_base, value.winner)?;
 
-        let turn_duration_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 3_u8).into());
-        StorageAccess::write(address_domain, turn_duration_base, value.turn_duration)?;
-
-        let num_players_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 4_u8).into());
+        let num_players_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 2_u8).into());
         StorageAccess::write(address_domain, num_players_base, value.num_players)?;
 
-        let start_time_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 5_u8).into());
+        let start_time_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 3_u8).into());
         StorageAccess::write(address_domain, start_time_base, value.start_time)?;
 
-        let is_active_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 6_u8).into());
+        let is_active_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 4_u8).into());
         StorageAccess::write(address_domain, is_active_base, value.is_active)?;
 
-        let current_tour_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 7_u8).into());
+        let current_tour_base = storage_base_address_from_felt252(storage_address_from_base_and_offset(base, 5_u8).into());
         StorageAccess::write(address_domain, current_tour_base, value.current_tour)
 
     }
@@ -179,12 +165,16 @@ mod duel_your_champ {
     use option::OptionTrait;
     use super::Game;
     use super::Player;
+    use super::ERC721ABIDispatcherTrait;
+    use super::ERC721ABIDispatcher;
+
 
 
     struct Storage {
         games: LegacyMap::<u256, Game >,
         game_count: u256,
-        players: LegacyMap::<(u256,u16), Player >,
+        challenger: Player,
+        accepter: Player,
         owner: ContractAddress,
 
     }
@@ -203,14 +193,49 @@ mod duel_your_champ {
     }
 
     #[external]
-    fn create_game(amount: felt252) {
+    fn challenge(_nft_collection_address: ContractAddress ,_nft_collection_token_id: u256) {
+        let nft_owner_address: ContractAddress = ERC721ABIDispatcher { contract_address: _nft_collection_address }.owner_of(_nft_collection_token_id); 
+        assert(nft_owner_address==get_caller_address(), 'Caller is not owner');
+
+        let _winner = get_contract_address();
+        let _caller = get_caller_address();
+        let start_time = get_block_timestamp()+ 600_u64;
+        let game = Game{
+            nft_collection_address: _nft_collection_address,
+            winner: _winner,
+            num_players: 1_u16,
+            start_time: start_time,
+            is_active : false,
+            current_tour: 0_u8,
+
+        };
+
+        let _game_count = game_count::read();
+        game_count::write(_game_count+1);
+        let game_id = game_count::read();
+
+        games::write(game_count::read(), game);
+    }
+
+    #[external]
+    fn accept(amount: felt252) {
+        assert(amount != 0, 'Amount cannot be 0');
+    } 
+
+    #[external]
+    fn heal(amount: felt252) {
         assert(amount != 0, 'Amount cannot be 0');
     }
 
     #[external]
-    fn join_game(amount: felt252) {
+    fn attack(amount: felt252) {
         assert(amount != 0, 'Amount cannot be 0');
-    }  
+    }
+
+    #[external]
+    fn special(amount: felt252) {
+        assert(amount != 0, 'Amount cannot be 0');
+    }
     
 
 
